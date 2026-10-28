@@ -275,8 +275,8 @@ function renderProjectsGrid() {
       const stats = projectMap[name];
       const progressPercent = Math.round((stats.completed / stats.total) * 100);
 
-      return
-      <div class="project-box">
+      return `
+        <div class="project-box">
         <div class="project-box-header">
           <span class="project-box-title">${escapeHtml(name)}</span>
           <span class="badge badge-neutral">${stats.total} Tasks</span>
