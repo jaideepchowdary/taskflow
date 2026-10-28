@@ -1,57 +1,13 @@
 /**
  * TaskFlow - Project & Task Management Dashboard
  * File: script.js
- * Description: Handles task CRUD operations, filters, search, metrics, and localStorage persistence.
+ * Description: Handles task CRUD operations, filters, search, metrics, and Flask REST API integration.
  */
 
 // ==========================================
-// 1. Initial State & Sample Data
+// 1. Initial State & API Configuration
 // ==========================================
-const STORAGE_KEY = 'taskflow_tasks_v1';
-
-// Starter tasks loaded if user has no saved tasks in localStorage yet
-const INITIAL_TASKS = [
-  {
-    id: '1',
-    name: 'Design MVP landing page mockup in Figma',
-    project: 'Website Launch',
-    priority: 'High',
-    dueDate: '2026-10-30',
-    status: 'In Progress'
-  },
-  {
-    id: '2',
-    name: 'Setup user authentication & secure session tokens',
-    project: 'Backend API',
-    priority: 'High',
-    dueDate: '2026-11-02',
-    status: 'Pending'
-  },
-  {
-    id: '3',
-    name: 'Draft seed fundraising pitch deck',
-    project: 'Fundraising',
-    priority: 'Medium',
-    dueDate: '2026-11-10',
-    status: 'Pending'
-  },
-  {
-    id: '4',
-    name: 'Conduct user interviews with 5 beta testers',
-    project: 'Customer Discovery',
-    priority: 'Medium',
-    dueDate: '2026-10-28',
-    status: 'Completed'
-  },
-  {
-    id: '5',
-    name: 'Configure production SSL & domain DNS settings',
-    project: 'DevOps',
-    priority: 'Low',
-    dueDate: '2026-10-25',
-    status: 'Completed'
-  }
-];
+const API_BASE_URL = '/api/tasks';
 
 let tasks = [];
 
@@ -85,6 +41,7 @@ const taskProjectInput = document.getElementById('taskProject');
 const taskDueDateInput = document.getElementById('taskDueDate');
 const taskPriorityInput = document.getElementById('taskPriority');
 const taskStatusInput = document.getElementById('taskStatus');
+const saveTaskBtn = document.getElementById('saveTaskBtn');
 const openAddTaskModalBtn = document.getElementById('openAddTaskModalBtn');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const cancelModalBtn = document.getElementById('cancelModalBtn');
@@ -111,12 +68,11 @@ const toastMessage = document.getElementById('toastMessage');
 // ==========================================
 // 3. Application Initialization
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   displayFormattedDate();
   setDefaultDueDate();
-  loadTasksFromStorage();
-  renderDashboard();
   setupEventListeners();
+  await loadTasksFromApi();
 });
 
 // Set current date in top header
@@ -137,27 +93,42 @@ function setDefaultDueDate() {
 }
 
 // ==========================================
-// 4. LocalStorage Helpers
+// 4. Backend API Helpers
 // ==========================================
-function loadTasksFromStorage() {
-  const storedData = localStorage.getItem(STORAGE_KEY);
-  if (storedData) {
-    try {
-      tasks = JSON.parse(storedData);
-    } catch (error) {
-      console.error('Error parsing stored tasks. Resetting to defaults.', error);
-      tasks = [...INITIAL_TASKS];
-      saveTasksToStorage();
-    }
-  } else {
-    // First time visitor: seed default demo tasks
-    tasks = [...INITIAL_TASKS];
-    saveTasksToStorage();
+async function loadTasksFromApi() {
+  if (tasksTableBody) {
+    tasksTableBody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-secondary);">
+          Loading tasks from server...
+        </td>
+      </tr>
+    `;
   }
-}
+  if (emptyState) emptyState.style.display = 'none';
 
-function saveTasksToStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  try {
+    const response = await fetch(API_BASE_URL);
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `Server returned status ${response.status}`);
+    }
+
+    tasks = await response.json();
+    renderDashboard();
+  } catch (error) {
+    console.error('Error fetching tasks from backend:', error);
+    if (tasksTableBody) {
+      tasksTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 2.5rem; color: #ef4444;">
+            Failed to connect to backend server. Please verify Flask is running.
+          </td>
+        </tr>
+      `;
+    }
+    showToast(`Error: ${error.message}`);
+  }
 }
 
 // ==========================================
@@ -304,22 +275,22 @@ function renderProjectsGrid() {
       const stats = projectMap[name];
       const progressPercent = Math.round((stats.completed / stats.total) * 100);
 
-      return `
-        <div class="project-box">
-          <div class="project-box-header">
-            <span class="project-box-title">${escapeHtml(name)}</span>
-            <span class="badge badge-neutral">${stats.total} Tasks</span>
-          </div>
-          <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-            Completed: ${stats.completed} &bull; Active: ${stats.inProgress + stats.pending}
-          </div>
-          <div style="background: #e2e8f0; height: 6px; border-radius: 999px; overflow: hidden;">
-            <div style="background: var(--primary); height: 100%; width: ${progressPercent}%;"></div>
-          </div>
-          <div style="text-align: right; font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-            ${progressPercent}% Done
-          </div>
+      return
+      <div class="project-box">
+        <div class="project-box-header">
+          <span class="project-box-title">${escapeHtml(name)}</span>
+          <span class="badge badge-neutral">${stats.total} Tasks</span>
         </div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+          Completed: ${stats.completed} &bull; Active: ${stats.inProgress + stats.pending}
+        </div>
+        <div style="background: #e2e8f0; height: 6px; border-radius: 999px; overflow: hidden;">
+          <div style="background: var(--primary); height: 100%; width: ${progressPercent}%;"></div>
+        </div>
+        <div style="text-align: right; font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+          ${progressPercent}% Done
+        </div>
+      </div>
       `;
     })
     .join('');
@@ -357,7 +328,7 @@ function openEditModal(taskId) {
   taskNameInput.focus();
 }
 
-function handleTaskFormSubmit(e) {
+async function handleTaskFormSubmit(e) {
   e.preventDefault();
 
   const id = taskIdInput.value;
@@ -379,50 +350,89 @@ function handleTaskFormSubmit(e) {
     return;
   }
 
-  if (id) {
-    // Updating existing task
-    const taskIndex = tasks.findIndex(t => t.id === id);
-    if (taskIndex !== -1) {
-      tasks[taskIndex] = {
-        ...tasks[taskIndex],
-        name,
-        project,
-        dueDate,
-        priority,
-        status
-      };
-      showToast('Task updated successfully!');
-    }
-  } else {
-    // Creating new task
-    const newTask = {
-      id: Date.now().toString(),
-      name,
-      project,
-      dueDate,
-      priority,
-      status
-    };
-    tasks.unshift(newTask); // Add to top of list
-    showToast(`Task "${name}" created successfully!`);
+  // Prevent duplicate submissions
+  const originalBtnText = saveTaskBtn ? saveTaskBtn.textContent : 'Save Task';
+  if (saveTaskBtn) {
+    saveTaskBtn.disabled = true;
+    saveTaskBtn.textContent = 'Saving...';
   }
 
-  saveTasksToStorage();
+  try {
+    if (id) {
+      // Updating existing task via PUT /api/tasks/<id>
+      const response = await fetch(`${ API_BASE_URL }/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, project, dueDate, priority, status })
+    });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to update task (${response.status})`);
+  }
+
+  const updatedTask = await response.json();
+  const taskIndex = tasks.findIndex(t => t.id === id);
+  if (taskIndex !== -1) {
+    tasks[taskIndex] = updatedTask;
+  }
   renderDashboard();
   closeModal();
+  showToast('Task updated successfully!');
+} else {
+  // Creating new task via POST /api/tasks
+  const response = await fetch(API_BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, project, dueDate, priority, status })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to create task (${response.status})`);
+  }
+
+  const newTask = await response.json();
+  tasks.unshift(newTask);
+  renderDashboard();
+  closeModal();
+  showToast(`Task "${name}" created successfully!`);
+}
+  } catch (error) {
+  console.error('Error saving task to backend:', error);
+  showToast(`Error: ${error.message}`);
+} finally {
+  if (saveTaskBtn) {
+    saveTaskBtn.disabled = false;
+    saveTaskBtn.textContent = originalBtnText;
+  }
+}
 }
 
-function deleteTask(taskId) {
+async function deleteTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   const taskName = task ? task.name : 'this task';
 
   const confirmDelete = confirm(`Are you sure you want to delete "${taskName}"?`);
   if (!confirmDelete) return;
 
-  tasks = tasks.filter(t => t.id !== taskId);
-  saveTasksToStorage();
-  renderDashboard();
-  showToast('Task deleted successfully.');
+  try {
+    const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(taskId)}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `Failed to delete task (${response.status})`);
+    }
+
+    tasks = tasks.filter(t => t.id !== taskId);
+    renderDashboard();
+    showToast('Task deleted successfully.');
+  } catch (error) {
+    console.error('Error deleting task on backend:', error);
+    showToast(`Error: ${error.message}`);
+  }
 }
 
 // ==========================================
@@ -475,7 +485,7 @@ function formatDate(dateStr) {
   if (!dateStr) return 'No due date';
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
-  
+
   const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
   return dateObj.toLocaleDateString('en-US', {
     month: 'short',
@@ -587,23 +597,64 @@ function setupEventListeners() {
 
   // Settings Actions
   if (loadSampleDataBtn) {
-    loadSampleDataBtn.addEventListener('click', () => {
-      tasks = [...INITIAL_TASKS];
-      saveTasksToStorage();
-      renderDashboard();
-      showToast('Loaded demo startup tasks!');
-      switchView('dashboard');
+    loadSampleDataBtn.addEventListener('click', async () => {
+      const originalText = loadSampleDataBtn.textContent;
+      try {
+        loadSampleDataBtn.disabled = true;
+        loadSampleDataBtn.textContent = 'Loading...';
+
+        const response = await fetch(`${API_BASE_URL}/reset`, {
+          method: 'POST'
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to reset sample tasks (${response.status})`);
+        }
+
+        const data = await response.json();
+        tasks = data.tasks || [];
+        renderDashboard();
+        showToast('Loaded demo startup tasks!');
+        switchView('dashboard');
+      } catch (error) {
+        console.error('Error resetting sample tasks:', error);
+        showToast(`Error: ${error.message}`);
+      } finally {
+        loadSampleDataBtn.disabled = false;
+        loadSampleDataBtn.textContent = originalText;
+      }
     });
   }
 
   if (clearAllDataBtn) {
-    clearAllDataBtn.addEventListener('click', () => {
+    clearAllDataBtn.addEventListener('click', async () => {
       const confirmClear = confirm('Are you sure you want to erase ALL tasks? This cannot be undone.');
-      if (confirmClear) {
+      if (!confirmClear) return;
+
+      const originalText = clearAllDataBtn.textContent;
+      try {
+        clearAllDataBtn.disabled = true;
+        clearAllDataBtn.textContent = 'Clearing...';
+
+        const response = await fetch(API_BASE_URL, {
+          method: 'DELETE'
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to clear tasks (${response.status})`);
+        }
+
         tasks = [];
-        saveTasksToStorage();
         renderDashboard();
         showToast('All tasks cleared.');
+      } catch (error) {
+        console.error('Error clearing tasks:', error);
+        showToast(`Error: ${error.message}`);
+      } finally {
+        clearAllDataBtn.disabled = false;
+        clearAllDataBtn.textContent = originalText;
       }
     });
   }
